@@ -10,16 +10,13 @@ const PhraseList = ({ darkMode, setDarkMode }) => {
   const [submitCount, setSubmitCount] = useState(0);
   const [lastSubmitTime, setLastSubmitTime] = useState(0);
   const [favorites, setFavorites] = useState(new Set());
-  const [userRatings, setUserRatings] = useState({});
-  const [ratingAggregates, setRatingAggregates] = useState({});
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const formRef = useRef(null);
   const recaptchaRef = useRef(null);
 
-  // ローカルストレージからお気に入りとユーザー評価を読み込み
+  // ローカルストレージからお気に入りを読み込み
   useEffect(() => {
     const savedFavorites = localStorage.getItem('code-lingua-favorites');
-    const savedUserRatings = localStorage.getItem('code-lingua-user-ratings');
     
     if (savedFavorites) {
       try {
@@ -28,30 +25,12 @@ const PhraseList = ({ darkMode, setDarkMode }) => {
         console.error('お気に入りの読み込みに失敗しました:', error);
       }
     }
-    
-    if (savedUserRatings) {
-      try {
-        const parsed = JSON.parse(savedUserRatings);
-        setUserRatings(parsed);
-        
-        // 保存されたユーザー評価から集計を再計算
-        Object.keys(parsed).forEach(id => {
-          updateRatingAggregates(parseInt(id), parsed[id].rating);
-        });
-      } catch (error) {
-        console.error('ユーザー評価の読み込みに失敗しました:', error);
-      }
-    }
   }, []);
 
-  // お気に入りとユーザー評価をローカルストレージに保存
+  // お気に入りをローカルストレージに保存
   useEffect(() => {
     localStorage.setItem('code-lingua-favorites', JSON.stringify([...favorites]));
   }, [favorites]);
-
-  useEffect(() => {
-    localStorage.setItem('code-lingua-user-ratings', JSON.stringify(userRatings));
-  }, [userRatings]);
 
   // レート制限: 1分間に3回まで
   const RATE_LIMIT = {
@@ -132,86 +111,9 @@ const PhraseList = ({ darkMode, setDarkMode }) => {
     });
   };
 
-  // ユーザー評価の追加・更新
-  const addUserRating = (id, newRating) => {
-    setUserRatings(prev => ({
-      ...prev,
-      [id]: {
-        rating: newRating,
-        timestamp: new Date().toISOString()
-      }
-    }));
-    
-    // 評価集計を更新
-    updateRatingAggregates(id, newRating);
-  };
 
-  // ユーザー評価の削除
-  const removeUserRating = (id) => {
-    setUserRatings(prev => {
-      const newRatings = { ...prev };
-      delete newRatings[id];
-      return newRatings;
-    });
-    
-    // 評価集計を更新（ユーザー評価なし）
-    updateRatingAggregates(id, null);
-  };
 
-  // 評価集計の更新
-  const updateRatingAggregates = (id, userRating) => {
-    const phrase = phrases.find(p => p.id === id);
-    if (!phrase) return;
 
-    let totalUserRatings = 0;
-    let userAverageRating = 0;
-    let combinedRating = phrase.rating;
-
-    if (userRating !== null) {
-      totalUserRatings = 1;
-      userAverageRating = userRating;
-      
-      // 既存評価とユーザー評価の組み合わせ
-      // 既存評価の重み: 0.7, ユーザー評価の重み: 0.3
-      combinedRating = (phrase.rating * 0.7) + (userRating * 0.3);
-    }
-
-    setRatingAggregates(prev => ({
-      ...prev,
-      [id]: {
-        totalUserRatings,
-        userAverageRating,
-        combinedRating: Math.round(combinedRating * 10) / 10 // 小数点1桁に丸める
-      }
-    }));
-  };
-
-  // 星評価コンポーネント
-  const StarRating = ({ rating, onRatingChange, readonly = false }) => {
-    return (
-      <div className="flex items-center gap-1">
-        {[1, 2, 3, 4, 5].map((star) => (
-          <button
-            key={star}
-            onClick={() => !readonly && onRatingChange(star)}
-            disabled={readonly}
-            className={`text-lg transition-colors ${
-              readonly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
-            } ${
-              star <= rating ? 'text-yellow-400' : 'text-gray-300'
-            }`}
-          >
-            {star <= rating ? '★' : '☆'}
-          </button>
-        ))}
-        {!readonly && (
-          <span className="text-xs text-gray-500 ml-2">
-            {rating}/5
-          </span>
-        )}
-      </div>
-    );
-  };
 
   // 入力値の検証
   const validateForm = (formData) => {
@@ -474,75 +376,20 @@ const PhraseList = ({ darkMode, setDarkMode }) => {
                     {phrase.english}
                   </h3>
                   
-                  {/* 評価とお気に入り */}
-                  <div className="flex flex-col gap-3 mt-2">
-                    {/* 既存評価（編集不可） */}
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        既存評価:
-                      </span>
-                      <StarRating 
-                        rating={phrase.rating} 
-                        readonly={true}
-                      />
-                      <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        ({phrase.ratingCount}件)
-                      </span>
-                    </div>
-                    
-                    {/* ユーザー評価（編集可能） */}
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                        あなたの評価:
-                      </span>
-                      <StarRating 
-                        rating={userRatings[phrase.id]?.rating || 0} 
-                        onRatingChange={(rating) => addUserRating(phrase.id, rating)}
-                        readonly={false}
-                      />
-                      {userRatings[phrase.id]?.rating && (
-                        <button 
-                          onClick={() => removeUserRating(phrase.id)}
-                          className={`text-xs px-2 py-1 rounded transition-colors ${
-                            darkMode ? 'text-red-400 hover:text-red-300' : 'text-red-500 hover:text-red-700'
-                          }`}
-                        >
-                          削除
-                        </button>
-                      )}
-                    </div>
-                    
-                    {/* 組み合わせ評価 */}
-                    {ratingAggregates[phrase.id] && ratingAggregates[phrase.id].totalUserRatings > 0 && (
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          総合評価:
-                        </span>
-                        <StarRating 
-                          rating={ratingAggregates[phrase.id].combinedRating} 
-                          readonly={true}
-                        />
-                        <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          ({phrase.ratingCount + ratingAggregates[phrase.id].totalUserRatings}件)
-                        </span>
-                      </div>
-                    )}
-                    
-                    {/* お気に入りボタン */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => toggleFavorite(phrase.id)}
-                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
-                          favorites.has(phrase.id)
-                            ? 'bg-yellow-500 text-white'
-                            : darkMode
-                              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        }`}
-                      >
-                        {favorites.has(phrase.id) ? '★ お気に入り' : '☆ お気に入りに追加'}
-                      </button>
-                    </div>
+                  {/* お気に入りボタン */}
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      onClick={() => toggleFavorite(phrase.id)}
+                      className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                        favorites.has(phrase.id)
+                          ? 'bg-yellow-500 text-white'
+                          : darkMode
+                            ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                      }`}
+                    >
+                      {favorites.has(phrase.id) ? '★ お気に入り' : '☆ お気に入りに追加'}
+                    </button>
                   </div>
                 </div>
                 
@@ -752,23 +599,6 @@ const PhraseList = ({ darkMode, setDarkMode }) => {
       <div className={`mt-8 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
         <p>フレーズをクリックしてコピーできます</p>
         <p className="mt-2">総フレーズ数: {phrases.length} | 現在のカテゴリ: {filteredPhrases.length}件</p>
-        <p className="mt-2">
-          <a 
-            href="https://github.com/masatoman/code-lingua" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="text-blue-500 hover:text-blue-700 underline"
-          >
-            GitHub
-          </a>
-          {' | '}
-          <a 
-            href="mailto:kanon02sky@gmail.com" 
-            className="text-blue-500 hover:text-blue-700 underline"
-          >
-            お問い合わせ
-          </a>
-        </p>
       </div>
     </div>
   );
